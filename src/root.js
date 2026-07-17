@@ -45,10 +45,6 @@ function artifactId(value) {
   return parts[parts.length - 1];
 }
 
-function lineText(value) {
-  return value.replace(/[\t\r\n]+/g, " ").trim();
-}
-
 function sourceKind(path) {
   const extension = extname(path).toLowerCase();
   if (extension === ".html" || extension === ".htm") return "html";
@@ -75,12 +71,6 @@ async function validateArtifactSource(file) {
     under_size_limit: fileStat.size <= 16 * 1024 * 1024,
     publishable: fileStat.size <= 16 * 1024 * 1024,
   };
-}
-
-function htmlTitle(contents) {
-  const match = contents.slice(0, 32768).replace(/<!--[\s\S]*?(?:-->|$)/g, "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (match === null) return null;
-  return lineText(match[1].replace(/<[^>]*>/g, ""));
 }
 
 function pageHtml(bodyHtml) {
@@ -144,8 +134,7 @@ async function artifactContent(path, kind, language) {
 
 async function artifactTitle(path, title) {
   if (title !== undefined) return title;
-  const source = await readFile(path, "utf8");
-  return htmlTitle(source) ?? basename(path, extname(path));
+  return basename(path, extname(path));
 }
 
 async function oauthToken() {
@@ -297,7 +286,7 @@ function renderDelete(value) {
 const publishParams = {
   file: S.String({ description: "Local HTML, Markdown, or text/code data file to publish." }),
   favicon: S.Optional(S.String({ description: "One or two emoji for the artifact browser-tab icon. Defaults to *." })),
-  title: S.Optional(S.String({ description: "Artifact title. Defaults to the HTML title or file basename." })),
+  title: S.Optional(S.String({ description: "Artifact title. Defaults to the file basename." })),
   label: S.Optional(S.String({ description: "Version label shown in the artifact version picker." })),
 };
 

@@ -81,13 +81,16 @@ function includesHighlightedSpan(content) {
   return content.includes('<span class="tc-token-');
 }
 
-const created = await run(["create", "test/smoke.html", "--title", "Smoke Artifact"]);
+const created = await run(["create", "test/smoke.html"]);
 if (created.artifact_id !== artifactId) throw new Error(`create id ${created.artifact_id}`);
 const htmlDeploy = requests.at(-1).body;
 requireIncludes(htmlDeploy.content, "<h1>Smoke Artifact</h1>", "html body not uploaded");
+if (htmlDeploy.title !== "smoke") throw new Error(`default title ${htmlDeploy.title}`);
+if (htmlDeploy.favicon !== "*") throw new Error(`default favicon ${htmlDeploy.favicon}`);
 
-await run(["create", "test/smoke.md", "--title", "Smoke Markdown"]);
+await run(["create", "test/smoke.md", "--title", "Smoke Markdown", "--favicon", "🧪"]);
 const markdownDeploy = requests.at(-1).body;
+if (markdownDeploy.favicon !== "🧪") throw new Error(`explicit favicon ${markdownDeploy.favicon}`);
 requireIncludes(markdownDeploy.content, "max-width: 760px", "artifact css not bundled");
 requireIncludes(markdownDeploy.content, "font: 14px/1.5 ui-rounded", "referenced artifact font style missing");
 requireIncludes(markdownDeploy.content, ".tc-token-keyword", "syntax highlight css not bundled");
