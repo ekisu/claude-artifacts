@@ -1,3 +1,12 @@
+---
+title: Smoke & Markdown
+tags:
+  - alpha
+  - beta
+draft: false
+details:
+  owner: <team>
+---
 # Smoke Markdown
 
 - alpha

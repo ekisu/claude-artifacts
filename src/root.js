@@ -5,6 +5,8 @@ import { basename, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { defineCommand, defineGroup, S } from "toolcraft";
+import { parse } from "toolcraft/design/parse";
+import { renderHtml } from "toolcraft/design/render-html";
 import { renderMarkdownHtml } from "toolcraft/design/render-markdown-html";
 
 const artifactIdPattern = /^[0-9a-fA-F-]{36}$/;
@@ -85,6 +87,37 @@ function pageHtml(bodyHtml) {
   return `<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>${artifactCss}</style></head><body>\n${bodyHtml}\n</body></html>`;
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function renderFrontmatterValue(value) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return `<table><tbody><tr>${value.map((item) => `<td>${renderFrontmatterValue(item)}</td>`).join("")}</tr></tbody></table>`;
+  }
+  if (value !== null && typeof value === "object") return renderFrontmatterTable(value);
+  if (value === null || value === undefined) return "";
+  return escapeHtml(value).replaceAll("\n", "<br>");
+}
+
+function renderFrontmatterTable(frontmatter) {
+  if (frontmatter === undefined) return "";
+  const rows = Object.entries(frontmatter)
+    .map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td>${renderFrontmatterValue(value)}</td></tr>`)
+    .join("");
+  return rows === "" ? "" : `<table class="frontmatter"><tbody>${rows}</tbody></table>`;
+}
+
+function renderArtifactMarkdownHtml(source) {
+  const { ast, frontmatter } = parse(source);
+  return [renderFrontmatterTable(frontmatter), renderHtml(ast, markdownHtmlOptions)].filter(Boolean).join("\n");
+}
+
 function fencedMarkdown(source, language) {
   const longestBacktickRun = Math.max(2, ...[...source.matchAll(/`+/g)].map((match) => match[0].length));
   const fence = "`".repeat(longestBacktickRun + 1);
@@ -94,7 +127,7 @@ function fencedMarkdown(source, language) {
 async function artifactContent(path, kind, language) {
   const source = await readFile(path, "utf8");
   if (kind === "markdown") {
-    return pageHtml(renderMarkdownHtml(source, markdownHtmlOptions));
+    return pageHtml(renderArtifactMarkdownHtml(source));
   }
   if (/<!doctype\s+html/i.test(source) || /<html[\s>]/i.test(source)) return source;
   if (kind === "html") return pageHtml(source);
