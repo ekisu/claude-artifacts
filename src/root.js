@@ -100,9 +100,17 @@ function renderFrontmatterValue(value) {
     if (value.length === 0) return "";
     return `<table><tbody><tr>${value.map((item) => `<td>${renderFrontmatterValue(item)}</td>`).join("")}</tr></tbody></table>`;
   }
-  if (value !== null && typeof value === "object") return renderFrontmatterTable(value);
+  if (value !== null && typeof value === "object") return renderNestedFrontmatterTable(value);
   if (value === null || value === undefined) return "";
   return escapeHtml(value).replaceAll("\n", "<br>");
+}
+
+function renderNestedFrontmatterTable(frontmatter) {
+  const entries = Object.entries(frontmatter);
+  if (entries.length === 0) return "";
+  const headers = entries.map(([key]) => `<th>${escapeHtml(key)}</th>`).join("");
+  const values = entries.map(([, value]) => `<td>${renderFrontmatterValue(value)}</td>`).join("");
+  return `<table><thead><tr>${headers}</tr></thead><tbody><tr>${values}</tr></tbody></table>`;
 }
 
 function renderFrontmatterTable(frontmatter) {

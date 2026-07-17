@@ -95,7 +95,7 @@ requireIncludes(markdownDeploy.content, '<table class="frontmatter"><tbody>', "f
 requireIncludes(markdownDeploy.content, "<th>title</th><td>Smoke &amp; Markdown</td>", "frontmatter scalar not rendered");
 requireIncludes(markdownDeploy.content, "<th>tags</th><td><table><tbody><tr><td>alpha</td><td>beta</td></tr></tbody></table></td>", "frontmatter array not rendered");
 requireIncludes(markdownDeploy.content, "<th>draft</th><td>false</td>", "frontmatter boolean not rendered");
-requireIncludes(markdownDeploy.content, "<th>details</th><td><table class=\"frontmatter\"><tbody><tr><th>owner</th><td>&lt;team&gt;</td>", "nested frontmatter not escaped");
+requireIncludes(markdownDeploy.content, "<th>details</th><td><table><thead><tr><th>owner</th></tr></thead><tbody><tr><td>&lt;team&gt;</td></tr></tbody></table></td>", "nested frontmatter not escaped");
 requireIncludes(markdownDeploy.content, "<h1>Smoke Markdown</h1>", "markdown heading not rendered");
 requireIncludes(markdownDeploy.content, "<ul><li>alpha</li><li>beta</li></ul>", "markdown list not rendered");
 requireIncludes(markdownDeploy.content, '<code class="language-ts">', "markdown code fence language missing");
