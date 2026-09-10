@@ -152,18 +152,36 @@ function artifactsApiBaseUrl() {
   return "https://api.anthropic.com";
 }
 
-async function frameRequest(method, path, body) {
-  const response = await fetch(`${artifactsApiBaseUrl()}${path}`, {
+async function frameRequest(method, path, body, webSession = false) {
+  let baseUrl = artifactsApiBaseUrl();
+  let headers;
+  if (webSession) {
+    const sessionKey = process.env["CLAUDE_AI_SESSION_KEY"];
+    const orgId = process.env["CLAUDE_AI_ORG_ID"];
+    if (!sessionKey || !orgId) throw new Error("Sending comments requires CLAUDE_AI_SESSION_KEY and CLAUDE_AI_ORG_ID from your claude.ai web session; Claude Code OAuth only supports reading comments.");
+    if (/[;\r\n]/.test(sessionKey)) throw new Error("CLAUDE_AI_SESSION_KEY must contain only the sessionKey cookie value.");
+    baseUrl = process.env["CLAUDE_CODE_ARTIFACTS_API_BASE_URL"] !== undefined ? baseUrl : "https://claude.ai";
+    path += `?org=${encodeURIComponent(orgId)}`;
+    headers = { cookie: `sessionKey=${sessionKey}`, origin: "https://claude.ai", "X-Frame-CP": "go" };
+  } else {
+    headers = { authorization: `Bearer ${await oauthToken()}`, "X-Frame-CP": "go" };
+  }
+  const response = await fetch(`${baseUrl}${path}`, {
     method,
+    redirect: "error",
     headers: {
-      authorization: `Bearer ${await oauthToken()}`,
+      ...headers,
       "content-type": "application/json",
-      "X-Frame-CP": "go",
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const text = await response.text();
-  const responseBody = text === "" ? null : JSON.parse(text);
+  let responseBody;
+  try {
+    responseBody = text === "" ? null : JSON.parse(text);
+  } catch {
+    throw new Error(`${method} ${path} ${response.status}: expected JSON, received ${text.slice(0, 200)}`);
+  }
   if (response.status === 409 && responseBody?.["conflict"] === true) throw new Error(`conflict: live version is ${responseBody["live"]}`);
   if (response.status < 200 || response.status >= 300) throw new Error(`${method} ${path} ${response.status}: ${JSON.stringify(responseBody)}`);
   return responseBody;
@@ -377,6 +395,63 @@ const listCommand = defineCommand({
   render: { json: renderJson, markdown: renderList, rich: (value) => process.stdout.write(`${renderList(value)}\n`) },
 });
 
+function renderComments(value) {
+  return renderLines([
+    `artifact: ${value.artifact_url}`,
+    value.threads.length === 0 ? "no comments" : "",
+    ...value.threads.map((thread) => renderLines([
+      `thread: ${thread.id}${thread.resolved ? " (resolved)" : ""}`,
+      thread.anchor?.label ? `   anchor: ${thread.anchor.label}` : "",
+      ...thread.comments.map((comment) => `   ${comment.id} · ${comment.author?.name ?? comment.author?.account ?? "unknown"} · ${comment.created_at}\n   ${comment.text}`),
+    ])),
+  ]);
+}
+
+const commentsCommand = defineCommand({
+  name: "comments",
+  description: "List artifact comment threads, replies, anchors, and send state.",
+  scope: ["cli", "mcp", "sdk"],
+  positional: ["artifact"],
+  params: S.Object({
+    artifact: S.String({ description: "Claude Code artifact URL or artifact ID." }),
+  }),
+  handler: async ({ params }) => {
+    const id = artifactId(params.artifact);
+    const response = await frameRequest("GET", `/api/frame/comments/${encodeURIComponent(id)}`, undefined);
+    if (!Array.isArray(response?.threads)) throw new Error(`Listing comments for ${id}: response is missing threads`);
+    return { ...response, artifact_id: id, artifact_url: `https://claude.ai/code/artifact/${id}` };
+  },
+  render: { json: renderJson, markdown: renderComments, rich: (value) => process.stdout.write(`${renderComments(value)}\n`) },
+});
+
+function renderSendToClaude(value) {
+  return renderLines([
+    `artifact: ${value.artifact_url}`,
+    `sent:     ${value.summon_all.count}`,
+    value.summon_all.at ? `at:       ${value.summon_all.at}` : "",
+    value.listeners !== undefined ? `listeners: ${value.listeners}` : "",
+  ]);
+}
+
+const sendToClaudeCommand = defineCommand({
+  name: "send-to-claude",
+  description: "Send all eligible open comments to Claude, like the artifact page's Send all action. Requires CLAUDE_AI_SESSION_KEY and CLAUDE_AI_ORG_ID. Changes comment send state; does not wait for Claude to respond.",
+  scope: ["cli", "mcp", "sdk"],
+  positional: ["artifact"],
+  params: S.Object({
+    artifact: S.String({ description: "Claude Code artifact URL or artifact ID." }),
+  }),
+  handler: async ({ params }) => {
+    const id = artifactId(params.artifact);
+    const response = await frameRequest("POST", `/api/frame/comments/${encodeURIComponent(id)}/to-claude`, {}, true);
+    if (!Number.isInteger(response?.summon_all?.count) || response.summon_all.count < 0) {
+      throw new Error(`Sending comments for ${id}: response is missing a valid summon_all count; check comment state before retrying`);
+    }
+    return { ...response, artifact_id: id, artifact_url: `https://claude.ai/code/artifact/${id}` };
+  },
+  render: { json: renderJson, markdown: renderSendToClaude, rich: (value) => process.stdout.write(`${renderSendToClaude(value)}\n`) },
+});
+
 const deleteCommand = defineCommand({
   name: "delete",
   description: "Delete a Claude Code artifact.",
@@ -402,6 +477,8 @@ export const root = defineGroup({
     readCommand,
     updateCommand,
     listCommand,
+    commentsCommand,
+    sendToClaudeCommand,
     deleteCommand,
   ],
 });

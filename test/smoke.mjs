@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import assert from "node:assert/strict";
 import http from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,10 @@ const requests = [];
 const artifactId = "11111111-1111-4111-8111-111111111111";
 let versionIndex = 0;
 let deleted = false;
+const threads = [{ id: "thread-1", anchor: { label: "Chart", path: "main > section" }, comments: [
+  { id: "comment-1", author: { account: "viewer" }, text: "Improve the chart", created_at: "2026-09-10T18:15:00Z" },
+  { id: "comment-2", author: { account: "viewer" }, text: "With more detail", created_at: "2026-09-10T18:16:00Z" },
+] }];
 
 const server = http.createServer((request, response) => {
   let body = "";
@@ -24,6 +29,10 @@ const server = http.createServer((request, response) => {
     if (request.method === "POST" && request.url === "/api/frame/deploy/direct") {
       versionIndex += 1;
       response.end(JSON.stringify({ slug: parsedBody.slug ?? artifactId, version: `version-${versionIndex}`, read: "owner", shared: false }));
+    } else if (request.method === "GET" && request.url === `/api/frame/comments/${artifactId}`) {
+      response.end(JSON.stringify({ v: 1, threads, viewer: "viewer", owned: true }));
+    } else if (request.method === "POST" && request.url === `/api/frame/comments/${artifactId}/to-claude?org=test-org`) {
+      response.end(JSON.stringify({ payload: { v: 1, threads }, summon_all: { count: 2, at: "2026-09-10T18:17:00Z", open: 2 }, listeners: 0 }));
     } else if (request.method === "GET" && request.url === "/api/frame/frames?limit=60") {
       response.end(JSON.stringify({ frames: deleted ? [] : [{ slug: artifactId, title: "Smoke Artifact", label: "smoke", owner_account: "acct", owner_email: "owner@example.com", source_surface: "code", rel: "mine", view_count: 2, unique_view_count: 1, updatedAt: "2026-06-23T19:28:14Z" }], thumbsEnabled: false }));
     } else if (request.method === "GET" && request.url === `/api/frame/${artifactId}`) {
@@ -41,14 +50,17 @@ const server = http.createServer((request, response) => {
 
 await new Promise((resolvePromise) => server.listen(0, "127.0.0.1", resolvePromise));
 
-function run(args) {
+function run(args, env = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(process.execPath, [bin, ...args, "--output", "json"], {
       cwd: root,
       env: {
         ...process.env,
         CLAUDE_CODE_OAUTH_TOKEN: "fake-token",
+        CLAUDE_AI_SESSION_KEY: "fake-session",
+        CLAUDE_AI_ORG_ID: "test-org",
         CLAUDE_CODE_ARTIFACTS_API_BASE_URL: `http://127.0.0.1:${server.address().port}`,
+        ...env,
       },
     });
     let stdout = "";
@@ -147,10 +159,22 @@ const listed = await run(["list"]);
 if (listed.artifacts.length !== 1 || listed.artifacts[0].artifact_id !== artifactId) throw new Error("list missing artifact");
 if (listed.gallery_url !== "https://claude.ai/code/artifacts") throw new Error(`gallery ${listed.gallery_url}`);
 const removed = await run(["delete", artifactId]);
+const comments = await run(["comments", `https://claude.ai/code/artifact/${artifactId}`]);
+if (JSON.stringify(comments.threads) !== JSON.stringify(threads) || comments.viewer !== "viewer") throw new Error("comments lost thread, reply, anchor, or viewer data");
+const sent = await run(["send-to-claude", artifactId]);
+if (sent.summon_all.count !== 2 || sent.listeners !== 0 || sent.payload.threads.length !== 1) throw new Error("send result lost state");
+if (JSON.stringify(requests.at(-1).body) !== "{}") throw new Error("send should use the page's empty request body");
+const sendRequest = requests.at(-1);
+if (sendRequest.headers.cookie !== "sessionKey=fake-session" || sendRequest.headers.authorization !== undefined || sendRequest.headers.origin !== "https://claude.ai") throw new Error("send must use web-session authentication without OAuth");
+const requestCount = requests.length;
+await assert.rejects(run(["send-to-claude", artifactId], { CLAUDE_AI_SESSION_KEY: "" }), /requires CLAUDE_AI_SESSION_KEY and CLAUDE_AI_ORG_ID/);
+await assert.rejects(run(["send-to-claude", artifactId], { CLAUDE_AI_ORG_ID: "" }), /requires CLAUDE_AI_SESSION_KEY and CLAUDE_AI_ORG_ID/);
+await assert.rejects(run(["send-to-claude", artifactId], { CLAUDE_AI_SESSION_KEY: "secret; other=cookie" }), /must contain only the sessionKey cookie value/);
+if (requests.length !== requestCount) throw new Error("invalid session credentials should fail before making a request");
 if (removed.deleted !== true) throw new Error("delete failed");
 const afterDelete = await run(["list"]);
 if (afterDelete.artifacts.length !== 0) throw new Error("deleted artifact still listed");
-if (!requests.every((request) => request.headers.authorization === "Bearer fake-token")) throw new Error("auth header missing");
+if (!requests.filter((request) => request !== sendRequest).every((request) => request.headers.authorization === "Bearer fake-token" && request.headers.cookie === undefined)) throw new Error("OAuth auth header missing or web session leaked");
 
 server.closeAllConnections?.();
 await new Promise((resolvePromise) => server.close(resolvePromise));

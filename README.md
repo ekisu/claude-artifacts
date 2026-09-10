@@ -10,6 +10,8 @@ I love Claude Code artifacts. `claude-artifacts` exists because sharing and upda
 - Update an existing artifact without changing its URL.
 - List your Claude Code artifacts with URLs, owners, view counts, and the gallery link.
 - Download the live artifact HTML when you need to inspect or archive it.
+- List comment threads and replies, including their anchors and send state.
+- Send all eligible open comments to Claude using the artifact page's Send all action.
 - Expose the same workflow to Claude Code, Codex, Cursor, and other MCP-capable coding agents.
 
 ## Install
@@ -94,10 +96,26 @@ claude-artifacts read <id>
 | `claude-artifacts create <file> [--title <title>] [--favicon <emoji>] [--label <label>]` | Publish a local file as a new artifact. |
 | `claude-artifacts list [--limit <n>]` | Show your Claude Code artifacts and gallery URL. |
 | `claude-artifacts read <artifact> [--content] [--content-version <version>]` | Read artifact metadata, or include HTML with `--content`. |
+| `claude-artifacts comments <artifact>` | List comment threads and replies. Use `--output json` for full anchors, author details, resolution and send state returned by the API. |
+| `claude-artifacts send-to-claude <artifact>` | Send all eligible open comments to Claude and return the send count, timestamp, and listener count when available. |
 | `claude-artifacts update <artifact> <file> [--title <title>] [--favicon <emoji>] [--label <label>] [--base-version <version>]` | Publish a new version to an existing artifact URL. |
 | `claude-artifacts delete <artifact>` | Remove an artifact. |
 
 `--favicon` is optional. It is a short text icon, usually an emoji, shown by Claude for the artifact.
+
+### Comments
+
+```sh
+claude-artifacts comments <id>
+claude-artifacts comments <id> --output json
+claude-artifacts send-to-claude <id>
+```
+
+`send-to-claude` changes comment send state. It uses the same bulk endpoint as the page's **Send all** action; it does not create a comment or wait for a Claude response. A successful send is not a guarantee that an agent is connected or will respond. The server decides which comments are eligible and may reject sending based on artifact permissions or feature availability.
+
+`comments` uses the existing Claude Code OAuth login. **Experimental:** `send-to-claude` requires the environment variables `CLAUDE_AI_SESSION_KEY` (the value of your claude.ai `sessionKey` cookie) and `CLAUDE_AI_ORG_ID` (your Claude organization UUID). Configure these privately in the CLI or MCP server environment; do not put them in command arguments or commit them. The command calls claude.ai directly and does not attach to or extract credentials from a browser.
+
+Comment listing has been verified against the live API. Sending is covered by local request-contract tests; live OAuth sending was rejected by Claude because the action requires a web session, and the web-session path has not been verified live. The frame API is undocumented and may change.
 
 ## MCP
 
@@ -124,8 +142,10 @@ Available MCP tools:
 
 ```text
 claude_artifacts__create
+claude_artifacts__comments
 claude_artifacts__list
 claude_artifacts__read
+claude_artifacts__send_to_claude
 claude_artifacts__update
 claude_artifacts__delete
 ```
