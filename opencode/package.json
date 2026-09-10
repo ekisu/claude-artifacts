@@ -1,0 +1,6 @@
+{
+  "name": "claude-artifacts-opencode-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./index.mjs"
+}

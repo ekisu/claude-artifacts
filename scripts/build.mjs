@@ -1,11 +1,13 @@
-import { chmod, copyFile } from "node:fs/promises";
+import { chmod, copyFile, rm } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 
+await rm("dist", { recursive: true, force: true });
 await build({
   entryPoints: {
     "claude-artifacts": "bin/claude-artifacts.mjs",
     "claude-artifacts-mcp": "bin/claude-artifacts-mcp.mjs",
+    "opencode/index": "src/opencode.js",
   },
   outdir: "dist",
   outExtension: { ".js": ".mjs" },
@@ -17,6 +19,8 @@ await build({
     "@modelcontextprotocol/sdk/inMemory.js",
     "@modelcontextprotocol/sdk/server/index.js",
     "@modelcontextprotocol/sdk/types.js",
+    "bufferutil",
+    "utf-8-validate",
   ],
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
@@ -40,3 +44,4 @@ await build({
 await chmod("dist/claude-artifacts.mjs", 0o755);
 await chmod("dist/claude-artifacts-mcp.mjs", 0o755);
 await copyFile("src/artifact.css", "dist/artifact.css");
+await copyFile("opencode/package.json", "dist/opencode/package.json");

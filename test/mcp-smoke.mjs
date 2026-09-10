@@ -59,7 +59,6 @@ const expected = [
   "claude_artifacts__delete",
   "claude_artifacts__list",
   "claude_artifacts__read",
-  "claude_artifacts__send_to_claude",
   "claude_artifacts__update",
 ];
 if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error(`tools ${JSON.stringify(names)}`);

@@ -8,12 +8,14 @@
     "claude-artifacts-mcp": "bin/claude-artifacts-mcp.mjs"
   },
   "exports": {
-    ".": "./src/root.js"
+    ".": "./src/root.js",
+    "./opencode": "./dist/opencode/index.mjs"
   },
   "files": [
     "bin",
     "dist",
     "src",
+    "opencode",
     "README.md",
     "LICENSE"
   ],
@@ -25,7 +27,7 @@
     "smoke:dist": "CLAUDE_ARTIFACTS_TEST_BIN=dist/claude-artifacts.mjs node test/smoke.mjs",
     "smoke:mcp": "node test/mcp-smoke.mjs && CLAUDE_ARTIFACTS_MCP_TEST_BIN=dist/claude-artifacts-mcp.mjs node test/mcp-smoke.mjs",
     "smoke:release": "npm run build && node dist/claude-artifacts.mjs --help && node dist/claude-artifacts.mjs --version && npm pack --dry-run",
-    "test": "npm run build && npm run smoke && npm run smoke:dist && npm run smoke:mcp"
+    "test": "npm run build && npm run smoke && npm run smoke:dist && npm run smoke:mcp && node --test test/feedback.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -45,7 +47,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "toolcraft": "^0.0.83"
+    "toolcraft": "^0.0.83",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "esbuild": "^0.25.12"

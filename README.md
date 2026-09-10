@@ -11,7 +11,7 @@ I love Claude Code artifacts. `claude-artifacts` exists because sharing and upda
 - List your Claude Code artifacts with URLs, owners, view counts, and the gallery link.
 - Download the live artifact HTML when you need to inspect or archive it.
 - List comment threads and replies, including their anchors and send state.
-- Send all eligible open comments to Claude using the artifact page's Send all action.
+- Watch feedback sent from the artifact page and deliver it to an OpenCode V2 session over a live WebSocket.
 - Expose the same workflow to Claude Code, Codex, Cursor, and other MCP-capable coding agents.
 
 ## Install
@@ -97,7 +97,6 @@ claude-artifacts read <id>
 | `claude-artifacts list [--limit <n>]` | Show your Claude Code artifacts and gallery URL. |
 | `claude-artifacts read <artifact> [--content] [--content-version <version>]` | Read artifact metadata, or include HTML with `--content`. |
 | `claude-artifacts comments <artifact>` | List comment threads and replies. Use `--output json` for full anchors, author details, resolution and send state returned by the API. |
-| `claude-artifacts send-to-claude <artifact>` | Send all eligible open comments to Claude and return the send count, timestamp, and listener count when available. |
 | `claude-artifacts update <artifact> <file> [--title <title>] [--favicon <emoji>] [--label <label>] [--base-version <version>]` | Publish a new version to an existing artifact URL. |
 | `claude-artifacts delete <artifact>` | Remove an artifact. |
 
@@ -108,14 +107,65 @@ claude-artifacts read <id>
 ```sh
 claude-artifacts comments <id>
 claude-artifacts comments <id> --output json
-claude-artifacts send-to-claude <id>
 ```
 
-`send-to-claude` changes comment send state. It uses the same bulk endpoint as the page's **Send all** action; it does not create a comment or wait for a Claude response. A successful send is not a guarantee that an agent is connected or will respond. The server decides which comments are eligible and may reject sending based on artifact permissions or feature availability.
+Comment listing and watching use the existing Claude Code OAuth login. They do not attach to a browser or require web-session cookies. The frame API is undocumented and may change.
 
-`comments` uses the existing Claude Code OAuth login. **Experimental:** `send-to-claude` requires the environment variables `CLAUDE_AI_SESSION_KEY` (the value of your claude.ai `sessionKey` cookie) and `CLAUDE_AI_ORG_ID` (your Claude organization UUID). Configure these privately in the CLI or MCP server environment; do not put them in command arguments or commit them. The command calls claude.ai directly and does not attach to or extract credentials from a browser.
+## OpenCode V2 feedback plugin
 
-Comment listing has been verified against the live API. Sending is covered by local request-contract tests; live OAuth sending was rejected by Claude because the action requires a web session, and the web-session path has not been verified live. The frame API is undocumented and may change.
+The plugin receives feedback submitted through the artifact page's **Send to Claude** action. An agent can publish a page, keep working, and receive your feedback automatically in the same conversation.
+
+Build and install this fork locally:
+
+```sh
+npm ci
+npm test
+npm pack
+# Install the generated tarball in your preferred persistent installation directory.
+npm install --prefix ~/.local/share/claude-artifacts ./claude-artifacts-0.1.0.tgz
+```
+
+Add the installed plugin directory to `~/.config/opencode/opencode.jsonc` (replace `/home/me` with your home directory):
+
+```jsonc
+{
+  "plugins": [
+    "/home/me/.local/share/claude-artifacts/node_modules/claude-artifacts/dist/opencode"
+  ],
+  "mcp": {
+    "servers": {
+      "claude-artifacts": {
+        "type": "local",
+        "command": ["node", "/home/me/.local/share/claude-artifacts/node_modules/claude-artifacts/dist/claude-artifacts-mcp.mjs"]
+      }
+    }
+  }
+}
+```
+
+Merge these entries into your existing configuration. Both the plugin and the MCP process use the Claude Code login available to the OpenCode service. The plugin needs a V2 build with `ctx.tool.transform` and `ctx.session.synthetic`.
+
+### Tools and workflow
+
+| OpenCode tool | Purpose |
+| --- | --- |
+| `artifact_feedback_watch` | Start watching a URL or UUID for this session. Returns after connecting; no repeated tool calls are needed. |
+| `artifact_feedback_unwatch` | Stop one artifact, or all watches in this session when `artifact` is omitted. |
+| `artifact_feedback_status` | Show connection state, delivery counts, and errors without a network request. |
+
+Tell OpenCode: **“Watch this artifact and work through feedback I send from the page.”**
+
+- Successful `claude_artifacts__create` and `claude_artifacts__update` tool calls automatically start a watch. Set plugin option `autoWatchPublished: false` to disable this hook.
+- A watch baselines existing submissions by default. Pass `include_existing: true` to also deliver already-sent feedback on unresolved threads.
+- Only explicit sends and thread activations trigger feedback. Ordinary unsent comments and resolved threads do not.
+- Feedback is admitted as a synthetic message with artifact, thread, and event provenance. It starts an idle agent or queues until current work reaches an idle boundary. It does not interrupt an active model call or change the session's model, agent, or permissions.
+- Repeated signals are deduplicated. Resending a comment with a newer send timestamp produces new feedback. Failed admissions retry with a deterministic message ID and identical payload.
+- Each session can watch up to five artifacts. Watches are session-scoped and stop on plugin unload/server shutdown. Call `watch` again after a restart. Explicit `unwatch` prevents a republish from restarting that watch during the plugin lifetime.
+- The connection sends heartbeats, renews expiring subscription tokens, and reconnects with bounded backoff. Comment reads happen on change signals and reconnects, not on an idle polling interval. Repeated failures stop the watch and appear in `status`.
+
+The plugin uses `GET /api/frame/<id>?via=model_read` to obtain a subscription token and opens `wss://claude.ai/edge-api/frame-live/<id>/ws` with the `frame-live.v1` subprotocol. On a comment-change signal it reads `/api/frame/comments/<id>` and compares `to_claude_at` and `claude_activated_at` timestamps. It does not mark comments resolved or send comments on your behalf.
+
+The outgoing `send-to-claude` command from the initial fork implementation has been removed: receiving page submissions is handled by the plugin.
 
 ## MCP
 
@@ -145,7 +195,6 @@ claude_artifacts__create
 claude_artifacts__comments
 claude_artifacts__list
 claude_artifacts__read
-claude_artifacts__send_to_claude
 claude_artifacts__update
 claude_artifacts__delete
 ```
